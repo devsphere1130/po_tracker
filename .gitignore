@@ -1,0 +1,28 @@
+# secrets / local config
+.env
+*.env.local
+
+# Python
+__pycache__/
+*.pyc
+backend/.venv/
+backend/staticfiles/
+
+# uploaded / generated media (keep the folder)
+backend/media/*
+!backend/media/purchase_orders/
+backend/media/purchase_orders/*
+!backend/media/purchase_orders/.gitkeep
+
+# local project PostgreSQL data directory (dev cluster)
+.pgdata/
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
