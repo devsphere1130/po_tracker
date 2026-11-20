@@ -1,6 +1,6 @@
 # Email integration status and plan
 
-**Current state: Demo only.** No real mailbox is connected. `InboxConnection` rows for Gmail / Microsoft show *Disconnected*; `POST inbox/connections/{id}/connect/` always refuses (409) because the OAuth flow is not implemented.
+**Current state: Gmail is implemented (read-only OAuth, `INBOX_MODE=live`); Microsoft Graph is not.** Demo mode still works with `INBOX_MODE=demo`. Gmail sync imports inbox emails from the last 30 days with a PDF/PNG/JPG attachment. `InboxConnection` rows for Gmail / Microsoft show *Disconnected*; `POST inbox/connections/{id}/connect/` always refuses (409) because the OAuth flow is not implemented.
 
 The seam is `backend/apps/inbox/providers.py`: implement `fetch_new_messages()` returning `RawMessage` objects. `inbox/services.py::import_message` already de-duplicates by `(provider, external_id)` per message and `(message, attachment id)` per attachment, and flags repeated attachment content (SHA-256) as *Duplicate*.
 

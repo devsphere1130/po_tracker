@@ -9,7 +9,7 @@ import RolePermissions from './RolePermissions'
 
 export default function Settings() {
   const { isAdmin } = useAuth()
-  const [tab, setTab] = useState('company')
+  const [tab, setTab] = useState(() => (new URLSearchParams(window.location.search).get('gmail') ? 'inbox' : 'company'))
   const tabs = [['company', 'Company profile'], ['inbox', 'Inbox integration'], ['ocr', 'OCR'], ['roles', 'Roles & permissions'], ...(isAdmin ? [['users', 'Users']] : [])]
   return (
     <>

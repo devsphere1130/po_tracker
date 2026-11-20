@@ -17,6 +17,7 @@ class InboxConnection(models.Model):
     folder = models.CharField(max_length=100, blank=True, default="INBOX")
     last_synced_at = models.DateTimeField(null=True, blank=True)
     notes = models.TextField(blank=True)
+    token_encrypted = models.TextField(blank=True)  # Fernet-encrypted refresh token; never serialised to the API
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):

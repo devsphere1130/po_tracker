@@ -16,6 +16,6 @@ Supplier purchase-order management: Django REST backend + React (Vite) frontend 
 - Supplied quantity is NEVER stored by hand: `PurchaseOrderItem.supplied_quantity` is recalculated from `SupplyEntry` rows and PO status is derived (`purchase_orders/services.py`). All supply writes go through `supply_tracking/services.py` (row locks via `select_for_update`).
 - Money/quantities use `DecimalField`; totals and line amounts are computed on the server.
 - OCR never invents data: missing fields stay empty with status `missing`. A PO can only be created from an extraction after a user-verified step (`verify` then `create-po`).
-- Inbox live providers (Gmail / Microsoft Graph) are interface stubs; never report "Connected" until OAuth is really implemented. Demo emails are flagged `is_demo`.
+- Gmail is a real read-only OAuth integration (`inbox/gmail.py`, refresh token Fernet-encrypted in `InboxConnection.token_encrypted`); a connection is "connected" only after Google returns a valid token. Microsoft Graph is still a stub. Demo emails are flagged `is_demo`; `INBOX_MODE=demo|live` selects which Sync now uses.
 - API errors use the envelope `{"error": {"code", "status", "message", "details"}}`. Staff cannot DELETE; users/company/inbox config are Admin-only.
 - Frontend business data comes from the API only (no hardcoded arrays, no localStorage).

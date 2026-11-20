@@ -7,3 +7,5 @@ python-dotenv>=1.0
 Pillow>=11.3
 pypdf>=5.0
 pytesseract>=0.3.13
+requests>=2.32
+cryptography>=43

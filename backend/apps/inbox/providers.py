@@ -14,7 +14,11 @@ from django.conf import settings
 from . import demo_data
 
 
-class ProviderNotConfigured(Exception):
+class ProviderError(Exception):
+    pass
+
+
+class ProviderNotConfigured(ProviderError):
     pass
 
 
@@ -62,16 +66,51 @@ class DemoProvider(MailProvider):
 
 
 class GmailProvider(MailProvider):
-    """Future: Gmail API. Steps: OAuth2 consent (scope gmail.readonly) -> store refresh token securely ->
-    users.messages.list(q='has:attachment label:inbox') -> users.messages.get(format='full') ->
-    users.messages.attachments.get. Message id = Gmail message id (stable, used for de-duplication)."""
+    """Live Gmail (read-only OAuth). Works only after the user completed Google consent in Settings."""
 
     key = "gmail"
+    MAX_NEW = 25
+    MAX_PAGES = 4
 
     def fetch_new_messages(self):
-        if not (settings.GMAIL_CLIENT_ID and settings.GMAIL_CLIENT_SECRET):
-            raise ProviderNotConfigured("Gmail OAuth client credentials are not set (GMAIL_CLIENT_ID / GMAIL_CLIENT_SECRET).")
-        raise ProviderNotConfigured("Gmail OAuth authorisation has not been completed; no mailbox is connected.")
+        from . import gmail
+        from .crypto import decrypt
+        from .models import InboxConnection, InboxMessage
+
+        conn = InboxConnection.objects.filter(provider="gmail").first()
+        if not conn or conn.state != InboxConnection.S_CONNECTED or not conn.token_encrypted:
+            raise ProviderNotConfigured("Gmail is not connected. Connect it in Settings > Inbox integration.")
+        try:
+            token = gmail.refresh_access_token(decrypt(conn.token_encrypted))
+        except gmail.GmailAuthError:
+            conn.state, conn.token_encrypted = InboxConnection.S_DISCONNECTED, ""
+            conn.save(update_fields=["state", "token_encrypted", "updated_at"])
+            raise ProviderNotConfigured("Google authorisation expired or was revoked. Reconnect Gmail in Settings.")
+        except (gmail.GmailError, ValueError) as exc:
+            raise ProviderError(str(exc))
+        known = set(InboxMessage.objects.filter(provider="gmail").values_list("external_id", flat=True))
+        out, page = [], None
+        try:
+            for _ in range(self.MAX_PAGES):
+                ids, page = gmail.list_message_ids(token, page)
+                for mid in ids:
+                    if mid in known:
+                        continue
+                    data = gmail.parse_message(gmail.get_message(token, mid), token)
+                    if not data["attachments"]:
+                        continue  # no PDF/image attachment: not a PO document
+                    out.append(RawMessage(
+                        external_id=data["external_id"], sender_name=data["sender_name"], sender_email=data["sender_email"],
+                        subject=data["subject"], body=data["body"], received_at=data["received_at"],
+                        attachments=[RawAttachment(**a) for a in data["attachments"]],
+                    ))
+                    if len(out) >= self.MAX_NEW:
+                        return out
+                if not page:
+                    break
+        except gmail.GmailError as exc:
+            raise ProviderError(str(exc))
+        return out
 
 
 class MicrosoftGraphProvider(MailProvider):

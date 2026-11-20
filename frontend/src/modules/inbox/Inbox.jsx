@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Copy, Eye, FileScan, Mail, RefreshCw, RotateCcw, ScanText, Send, XCircle } from 'lucide-react'
 import PageHeader from '../../components/PageHeader'
@@ -21,6 +21,10 @@ export default function Inbox() {
   const list = useList(inboxApi.list, { ordering: '-received_at' })
   const [busy, setBusy] = useState('')
   const [preview, setPreview] = useState(null)
+  const [mode, setMode] = useState(null)
+  useEffect(() => { inboxApi.connections().then(setMode).catch(() => {}) }, [])
+  const demo = !mode || mode.mode === 'demo'
+  const gmail = mode?.connections.find((c) => c.provider === 'gmail')
 
   const run = async (key, fn, ok) => {
     setBusy(key)
@@ -74,15 +78,21 @@ export default function Inbox() {
     <>
       <PageHeader title="Inbox" subtitle="Purchase order emails received from customers"
         actions={<>
-          <button className="btn" disabled={busy === 'simulate'} onClick={() => run('simulate', inboxApi.simulate, (m) => `Simulated email received: ${m.subject}`)}><Send size={15} /> Simulate incoming email</button>
-          <button className="btn btn-primary" disabled={busy === 'sync'} onClick={() => run('sync', () => inboxApi.sync('demo'), (r) => (r.imported ? `Demo sync complete: ${r.imported} new email(s) imported.` : 'Demo sync complete: no new emails.'))}>
+          {demo && <button className="btn" disabled={busy === 'simulate'} onClick={() => run('simulate', inboxApi.simulate, (m) => `Simulated email received: ${m.subject}`)}><Send size={15} /> Simulate incoming email</button>}
+          <button className="btn btn-primary" disabled={busy === 'sync'} onClick={() => run('sync', () => inboxApi.sync(), (r) => `${r.demo ? 'Demo sync' : 'Gmail sync'} complete: ${r.imported ? `${r.imported} new email(s) imported.` : 'no new emails.'}`)}>
             <RefreshCw size={15} className={busy === 'sync' ? 'spin' : ''} /> {busy === 'sync' ? 'Syncing…' : 'Sync now'}
           </button>
         </>} />
-      <div className="alert alert-warn flex" style={{ marginBottom: 14 }}>
-        <Mail size={16} />
-        <span><strong>Demo mode.</strong> This inbox contains simulated emails stored in PostgreSQL. No real Gmail or Microsoft mailbox is connected — configure it in <Link to="/settings">Settings</Link> once OAuth credentials exist.</span>
-      </div>
+      {demo ? (
+        <div className="alert alert-warn flex" style={{ marginBottom: 14 }}>
+          <Mail size={16} />
+          <span><strong>Demo mode.</strong> This inbox contains simulated emails stored in PostgreSQL. No real mailbox is connected — see <Link to="/settings">Settings</Link>.</span>
+        </div>
+      ) : gmail?.state === 'connected' ? (
+        <div className="alert alert-ok flex" style={{ marginBottom: 14 }}><Mail size={16} /><span><strong>Gmail connected</strong> as {gmail.account_email}. “Sync now” imports emails from the last 30 days that have a PDF/PNG/JPG attachment.</span></div>
+      ) : (
+        <div className="alert alert-warn flex" style={{ marginBottom: 14 }}><Mail size={16} /><span><strong>No mailbox connected.</strong> Connect Gmail in <Link to="/settings">Settings → Inbox integration</Link>.</span></div>
+      )}
       <div className="card">
         <div className="toolbar">
           <SearchInput value={list.params.search} onChange={(v) => list.setFilter('search', v)} placeholder="Search sender, subject, attachment…" />
@@ -95,7 +105,7 @@ export default function Inbox() {
           <button className="btn" onClick={list.reset}>Clear</button>
         </div>
         <DataTable columns={columns} rows={list.rows} loading={list.loading} error={list.error} onRetry={list.reload}
-          emptyTitle="Inbox is empty" emptyHint="Click “Sync now” to import the simulated demo emails." />
+          emptyTitle="Inbox is empty" emptyHint="Click “Sync now” to import emails." />
         <Pagination page={list.params.page} pageSize={list.params.page_size} count={list.count} onPage={list.setPage} onPageSize={list.setPageSize} />
       </div>
       {preview && (

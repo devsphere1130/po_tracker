@@ -1,4 +1,5 @@
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import override_settings
 
 from apps.inbox import demo_documents
 from apps.inbox.models import InboxMessage
@@ -40,6 +41,7 @@ class ParserTests(BaseAPITest):
         self.assertIn("line_total_mismatch", out["items"][0]["flags"])
 
 
+@override_settings(INBOX_MODE="demo", GMAIL_CLIENT_ID="", GMAIL_CLIENT_SECRET="")
 class InboxFlowTests(BaseAPITest):
     def test_sync_is_idempotent_and_never_imports_twice(self):
         first = self.client.post(API + "/inbox/messages/sync/", {"provider": "demo"}, format="json").json()

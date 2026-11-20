@@ -1,5 +1,7 @@
 from django.conf import settings
-from django.http import FileResponse
+import secrets
+
+from django.http import FileResponse, HttpResponseRedirect
 from django.shortcuts import get_object_or_404
 from rest_framework import mixins, viewsets
 from rest_framework.decorators import action, api_view
@@ -12,9 +14,10 @@ from apps.accounts.permissions import user_role
 from apps.ocr import services as ocr_services
 from apps.ocr.serializers import OCRExtractionSerializer
 
-from . import services
+from . import gmail, services
+from .crypto import encrypt
 from .models import InboxAttachment, InboxConnection, InboxMessage
-from .providers import ProviderNotConfigured
+from .providers import ProviderError
 from .serializers import InboxConnectionSerializer, InboxMessageSerializer
 
 
@@ -33,13 +36,22 @@ class InboxMessageViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, view
 
     @action(detail=False, methods=["post"])
     def sync(self, request):
-        provider = request.data.get("provider", "demo")
+        provider = request.data.get("provider", "auto")
+        if provider == "auto":  # demo mode -> demo inbox; live mode -> the connected mailbox
+            if settings.INBOX_MODE == "demo":
+                provider = "demo"
+            else:
+                connected = InboxConnection.objects.filter(state=InboxConnection.S_CONNECTED).exclude(provider="demo").first()
+                if not connected:
+                    raise Conflict("No mailbox is connected. Connect Gmail in Settings > Inbox integration.")
+                provider = connected.provider
         if provider == "demo" and settings.INBOX_MODE != "demo":
             raise ValidationError({"provider": "Demo inbox is disabled because INBOX_MODE is not 'demo'."})
         try:
             result = services.sync_inbox(provider)
-        except ProviderNotConfigured as exc:
+        except ProviderError as exc:
             raise Conflict(f"Cannot sync {provider}: {exc}")
+        result["provider"] = provider
         log_action(request.user, "sync", model_name="InboxMessage", details=result)
         return Response(result)
 
@@ -117,14 +129,64 @@ class InboxConnectionViewSet(mixins.ListModelMixin, mixins.UpdateModelMixin, vie
 
     @action(detail=True, methods=["post"])
     def connect(self, request, pk=None):
-        """Honest placeholder: the OAuth consent flow is not implemented, so this can never report 'connected'."""
+        """Starts the OAuth consent flow. Returns the Google URL; the connection becomes 'connected' only
+        after Google returns a valid token (see oauth_gmail_callback)."""
         conn = self.get_object()
         if conn.provider == "demo":
             raise ValidationError({"detail": "The demo inbox is always available in demo mode; nothing to connect."})
-        configured = (
-            bool(settings.GMAIL_CLIENT_ID and settings.GMAIL_CLIENT_SECRET) if conn.provider == "gmail"
-            else bool(settings.MS_GRAPH_CLIENT_ID and settings.MS_GRAPH_CLIENT_SECRET and settings.MS_GRAPH_TENANT_ID)
-        )
-        if not configured:
-            raise Conflict(f"OAuth client credentials for {conn.get_provider_display()} are not configured in backend/.env.")
-        raise Conflict(f"{conn.get_provider_display()} OAuth consent flow is not implemented yet; the mailbox remains disconnected.")
+        if conn.provider == "microsoft":
+            raise Conflict("Microsoft Graph OAuth is not implemented yet; the mailbox remains disconnected.")
+        if not (settings.GMAIL_CLIENT_ID and settings.GMAIL_CLIENT_SECRET):
+            raise Conflict("Gmail OAuth client credentials are not configured in backend/.env.")
+        if user_role(request.user) != "admin":
+            raise Conflict("Only an Admin can connect a mailbox.")
+        state = secrets.token_urlsafe(24)
+        request.session["gmail_oauth_state"] = state
+        return Response({"authorization_url": gmail.build_auth_url(state)})
+
+    @action(detail=True, methods=["post"])
+    def disconnect(self, request, pk=None):
+        if user_role(request.user) != "admin":
+            raise Conflict("Only an Admin can disconnect a mailbox.")
+        conn = self.get_object()
+        conn.token_encrypted, conn.state, conn.account_email = "", InboxConnection.S_DISCONNECTED, ""
+        conn.save(update_fields=["token_encrypted", "state", "account_email", "updated_at"])
+        log_action(request.user, "disconnect", conn)
+        return Response(self.get_serializer(conn).data)
+
+
+@api_view(["GET"])
+def oauth_gmail_callback(request):
+    """Google redirects here after consent. Verifies state, exchanges the code, stores the encrypted refresh token."""
+    base = f"{settings.FRONTEND_URL}/settings"
+
+    def done(status, msg=""):
+        from urllib.parse import quote
+        return HttpResponseRedirect(f"{base}?gmail={status}&msg={quote(msg)}")
+
+    expected = request.session.pop("gmail_oauth_state", None)
+    if request.query_params.get("error"):
+        return done("error", f"Google: {request.query_params['error']}")
+    if not expected or not secrets.compare_digest(expected, request.query_params.get("state", "")):
+        return done("error", "Invalid or expired OAuth state. Please start the connection again.")
+    if user_role(request.user) != "admin":
+        return done("error", "Only an Admin can connect a mailbox.")
+    code = request.query_params.get("code")
+    if not code:
+        return done("error", "Google did not return an authorisation code.")
+    try:
+        tokens = gmail.exchange_code(code)
+        refresh = tokens.get("refresh_token")
+        if not refresh:
+            return done("error", "Google did not issue a refresh token. Remove the app at myaccount.google.com/permissions and connect again.")
+        profile = gmail.get_profile(tokens["access_token"])
+    except gmail.GmailError as exc:
+        return done("error", str(exc))
+    ensure_connections()
+    conn = InboxConnection.objects.get(provider="gmail")
+    conn.token_encrypted = encrypt(refresh)
+    conn.account_email = profile.get("emailAddress", "")
+    conn.state = InboxConnection.S_CONNECTED
+    conn.save()
+    log_action(request.user, "connect", conn)
+    return done("connected", conn.account_email)
