@@ -1,3 +1,8 @@
+import os
+import tempfile
+from contextlib import contextmanager
+from pathlib import Path
+
 from django.core.files.base import ContentFile
 from django.db import transaction
 from django.utils import timezone
@@ -12,6 +17,20 @@ from .models import OCRExtraction
 from .parser import parse_po_text
 
 
+@contextmanager
+def _local_copy(f, filename):
+    """Yield a local filesystem path for a stored file. Remote storage (R2/S3) has no .path,
+    so the content is copied to a temp file that is removed afterwards."""
+    fd, tmp_path = tempfile.mkstemp(suffix=Path(filename or f.name).suffix)
+    try:
+        with os.fdopen(fd, "wb") as tmp, f.open("rb") as src:
+            for chunk in src.chunks():
+                tmp.write(chunk)
+        yield tmp_path
+    finally:
+        os.unlink(tmp_path)
+
+
 def run_extraction(ex):
     """(Re)run text extraction + parsing for an extraction record. Never raises for bad documents:
     the failure is stored on the record with a clear message."""
@@ -19,7 +38,8 @@ def run_extraction(ex):
         raise Conflict("This extraction has already been converted to a purchase order.")
     f = ex.source_file
     try:
-        result = extract_text(f.path, ex.original_filename)
+        with _local_copy(f, ex.original_filename) as local_path:
+            result = extract_text(local_path, ex.original_filename)
         customers = list(Customer.objects.filter(is_active=True).values_list("id", "name"))
         materials = list(Material.objects.filter(is_active=True).values_list("id", "name", "material_code"))
         aliases = dict(MaterialAlias.objects.values_list("normalized", "material_id"))

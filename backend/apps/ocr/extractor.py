@@ -60,11 +60,11 @@ def _ocr_image(img):
         scale = 1600 / max(img.size)
         img = img.resize((int(img.width * scale), int(img.height * scale)), Image.LANCZOS)
     try:
-        data = pt.image_to_data(img, config="--psm 6", output_type=pt.Output.DICT)
+        data = pt.image_to_data(img, lang=settings.OCR_LANG, config="--psm 6", output_type=pt.Output.DICT)
     except pt.TesseractError as exc:
         raise ExtractionError(f"Tesseract failed on this image: {exc}") from exc
     confs = [float(c) for c, w in zip(data["conf"], data["text"]) if w.strip() and float(c) >= 0]
-    text = pt.image_to_string(img, config="--psm 6")
+    text = pt.image_to_string(img, lang=settings.OCR_LANG, config="--psm 6")
     return text, (sum(confs) / len(confs) / 100 if confs else 0.0)
 
 
