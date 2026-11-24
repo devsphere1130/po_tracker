@@ -127,6 +127,35 @@ X_FRAME_OPTIONS = "SAMEORIGIN"
 
 # OCR
 TESSERACT_CMD = os.environ.get("TESSERACT_CMD", "").strip()
+OCR_LANG = os.environ.get("OCR_LANG", "eng").strip() or "eng"  # e.g. tha+eng (needs tha.traineddata)
+# On Linux (Vercel) use the Tesseract bundled in backend/vendor/tesseract when no path is set
+# (built by tools/build-tesseract.sh). Windows keeps using TESSERACT_CMD / PATH.
+_VENDOR_TESS = BASE_DIR / "vendor" / "tesseract"
+if not TESSERACT_CMD and os.name != "nt" and (_VENDOR_TESS / "bin" / "tesseract").exists():
+    TESSERACT_CMD = str(_VENDOR_TESS / "bin" / "tesseract")
+    os.environ["LD_LIBRARY_PATH"] = f"{_VENDOR_TESS / 'lib'}:{os.environ.get('LD_LIBRARY_PATH', '')}"
+    os.environ.setdefault("TESSDATA_PREFIX", str(_VENDOR_TESS / "tessdata"))
+
+# Uploaded files: Cloudflare R2 (S3-compatible) when configured, otherwise local MEDIA_ROOT.
+# Vercel's filesystem is read-only, so production must set the AWS_* variables.
+if os.environ.get("AWS_STORAGE_BUCKET_NAME"):
+    STORAGES = {
+        "default": {
+            "BACKEND": "storages.backends.s3.S3Storage",
+            "OPTIONS": {
+                "bucket_name": os.environ["AWS_STORAGE_BUCKET_NAME"],
+                "endpoint_url": os.environ.get("AWS_S3_ENDPOINT_URL") or None,
+                "region_name": os.environ.get("AWS_S3_REGION_NAME", "auto"),
+                "access_key": os.environ.get("AWS_ACCESS_KEY_ID"),
+                "secret_key": os.environ.get("AWS_SECRET_ACCESS_KEY"),
+                "signature_version": "s3v4",
+                "default_acl": None,
+                "file_overwrite": False,
+                "querystring_auth": True,
+            },
+        },
+        "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+    }
 # Inbox
 INBOX_MODE = os.environ.get("INBOX_MODE", "demo").lower()  # demo | live
 GMAIL_CLIENT_ID = os.environ.get("GMAIL_CLIENT_ID", "")
