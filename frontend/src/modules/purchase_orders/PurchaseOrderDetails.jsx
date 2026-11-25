@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { Ban, FileText, Pencil, Plus, RotateCcw, Trash2, Truck } from 'lucide-react'
 import PageHeader from '../../components/PageHeader'
@@ -10,7 +10,7 @@ import { useToast } from '../../components/Toast'
 import { useAuth } from '../../auth/AuthContext'
 import { purchaseOrdersApi } from '../../api/purchaseOrders'
 import { supplyApi } from '../../api/supply'
-import { errorMessage } from '../../api/client'
+import useCached from '../../hooks/useCached'
 import { fmtDate, money, qty, uomLabel } from '../../utils/format'
 import SupplyEntryForm from '../supply_tracking/SupplyEntryForm'
 
@@ -19,13 +19,9 @@ export default function PurchaseOrderDetails() {
   const navigate = useNavigate()
   const toast = useToast()
   const { isAdmin } = useAuth()
-  const [po, setPo] = useState(null)
-  const [error, setError] = useState('')
+  const { data: po, error, reload: load, setData: setPo } = useCached(`po:${id}`, () => purchaseOrdersApi.get(id))
   const [modal, setModal] = useState(null)
   const [reason, setReason] = useState('')
-
-  const load = useCallback(() => purchaseOrdersApi.get(id).then(setPo).catch((e) => setError(errorMessage(e))), [id])
-  useEffect(() => { load() }, [load])
 
   if (error) return <ErrorBanner message={error} onRetry={load} />
   if (!po) return <Loading />

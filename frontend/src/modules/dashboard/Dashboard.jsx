@@ -1,11 +1,10 @@
-import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Bar, BarChart, CartesianGrid, ComposedChart, Legend, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import PageHeader from '../../components/PageHeader'
 import { ErrorBanner, Loading } from '../../components/DataTable'
 import { PoStatus } from '../../components/StatusBadge'
 import { getDashboard } from '../../api/dashboard'
-import { errorMessage } from '../../api/client'
+import useCached from '../../hooks/useCached'
 import { fmtDate, money, moneyCompact, qty, uomLabel } from '../../utils/format'
 
 const BLUE = '#2563eb'
@@ -23,10 +22,7 @@ function Stat({ label, value, sub, to, accent }) {
 }
 
 export default function Dashboard() {
-  const [data, setData] = useState(null)
-  const [error, setError] = useState('')
-  const load = () => getDashboard().then(setData).catch((e) => setError(errorMessage(e)))
-  useEffect(() => { load() }, [])
+  const { data, error, reload: load } = useCached('dashboard', getDashboard)
 
   if (error) return <ErrorBanner message={error} onRetry={load} />
   if (!data) return <Loading />

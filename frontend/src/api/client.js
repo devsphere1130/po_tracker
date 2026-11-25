@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { clearCache } from './cache'
 
 // Same-origin through the Vite proxy: session cookie + CSRF header (X-CSRFToken from the csrftoken cookie).
 const api = axios.create({
@@ -10,10 +11,16 @@ const api = axios.create({
 })
 
 api.interceptors.response.use(
-  (r) => r,
+  (r) => {
+    if (r.config.method !== 'get') clearCache() // data changed (also covers login/logout)
+    return r
+  },
   (err) => {
+    // A failed change may still have altered data (e.g. a failed OCR scan), so drop the cache too.
+    if (err.config?.method !== 'get') clearCache()
     const code = err.response?.data?.error?.code
     if (code === 'not_authenticated' && !err.config.url.includes('/auth/me')) {
+      clearCache()
       window.dispatchEvent(new Event('auth:expired'))
     }
     return Promise.reject(err)

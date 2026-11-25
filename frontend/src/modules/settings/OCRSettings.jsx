@@ -18,10 +18,8 @@ export default function OCRSettings() {
         <dt>Binary path</dt><dd className="mono">{info.path || 'not set (searching PATH)'}</dd>
         <dt>Digital PDFs</dt><dd>Text layer is read directly with pypdf (no OCR)</dd>
         <dt>Scanned PDFs / images</dt><dd>Tesseract via pytesseract + Pillow (PNG, JPG, JPEG)</dd>
-        <dt>Paid APIs</dt><dd>None — everything runs locally</dd>
       </dl>
       {info.error && <div className="alert alert-error">{info.error}</div>}
-      <div className="small muted">To change the Tesseract location set <code>TESSERACT_CMD</code> in <code>backend/.env</code> and restart the backend. Install on Windows: <code>winget install UB-Mannheim.TesseractOCR</code>.</div>
     </div>
   )
 }

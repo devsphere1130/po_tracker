@@ -1,16 +1,20 @@
 import { useEffect, useState } from 'react'
 import { customersApi } from '../api/customers'
 import { materialsApi } from '../api/materials'
+import { fetchCached, listKey, peek } from '../api/cache'
 
 /** Loads every active (or all) customer/material for dropdowns. */
 function useAll(api, activeOnly) {
-  const [items, setItems] = useState([])
+  const params = { page_size: 200, ordering: 'name', ...(activeOnly ? { is_active: true } : {}) }
+  const key = listKey(api.list, params)
+  const [items, setItems] = useState(() => peek(key)?.results || [])
   const [version, setVersion] = useState(0)
   useEffect(() => {
     let live = true
-    api.list({ page_size: 200, ordering: 'name', ...(activeOnly ? { is_active: true } : {}) }).then((r) => live && setItems(r.results)).catch(() => {})
+    fetchCached(key, () => api.list(params)).then((r) => live && setItems(r.results)).catch(() => {})
     return () => { live = false }
-  }, [api, activeOnly, version])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, version])
   return [items, () => setVersion((v) => v + 1)]
 }
 

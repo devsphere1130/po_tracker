@@ -75,6 +75,9 @@ DATABASES = {
         "PASSWORD": os.environ["DB_PASSWORD"],
         "HOST": os.environ.get("DB_HOST", "127.0.0.1"),
         "PORT": os.environ.get("DB_PORT", "5432"),
+        # Reuse the connection between requests: opening one costs several network round trips.
+        "CONN_MAX_AGE": int(os.environ.get("DB_CONN_MAX_AGE", "0" if DEBUG else "60")),
+        "CONN_HEALTH_CHECKS": True,
     }
 }
 
