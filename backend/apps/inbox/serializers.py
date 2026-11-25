@@ -15,7 +15,8 @@ class InboxAttachmentSerializer(serializers.ModelSerializer):
         return f"/api/v1/inbox/attachments/{obj.pk}/file/"
 
     def get_extraction(self, obj):
-        ex = obj.extractions.order_by("-id").first()
+        # .all() uses the view's prefetch; order_by() here would query once per attachment.
+        ex = max(obj.extractions.all(), key=lambda e: e.pk, default=None)
         if not ex:
             return None
         return {"id": ex.pk, "status": ex.status, "engine": ex.engine, "error_message": ex.error_message}

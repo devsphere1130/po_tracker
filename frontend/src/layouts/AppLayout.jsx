@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { BarChart3, ClipboardList, FileScan, Inbox, LayoutDashboard, LogOut, Menu, Package, Settings, Truck, Users } from 'lucide-react'
 import { useAuth } from '../auth/AuthContext'
+import { prefetchPages } from '../api/prefetch'
 
 const NAV = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
@@ -19,6 +20,7 @@ export default function AppLayout() {
   const { user, logout } = useAuth()
   const [open, setOpen] = useState(false)
   const navigate = useNavigate()
+  useEffect(() => { prefetchPages() }, [])
 
   return (
     <div className="app">

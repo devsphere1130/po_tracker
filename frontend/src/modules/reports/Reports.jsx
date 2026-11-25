@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Download } from 'lucide-react'
 import { Bar, BarChart, CartesianGrid, ComposedChart, Legend, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
@@ -10,6 +10,7 @@ import { useToast } from '../../components/Toast'
 import { useCustomers, useMaterials } from '../../hooks/useOptions'
 import { downloadCsv, getPoReport, getReport } from '../../api/reports'
 import { errorMessage } from '../../api/client'
+import useCached from '../../hooks/useCached'
 import { fmtDate, money, moneyCompact, qty, uomLabel } from '../../utils/format'
 
 const BLUE = '#2563eb'
@@ -54,23 +55,18 @@ export default function Reports() {
   const [filters, setFilters] = useState({ date_from: '', date_to: '', customer: '', material: '', status: '' })
   const [tab, setTab] = useState('overview')
   const [kind, setKind] = useState('pending')
-  const [data, setData] = useState(null)
-  const [error, setError] = useState('')
-  const [loading, setLoading] = useState(true)
 
   const params = useMemo(() => Object.fromEntries(Object.entries(filters).filter(([, v]) => v)), [filters])
   // Report endpoint + params for the active tab (the PO-status tab ignores the status filter: the kind is the status)
   const endpoint = tab === 'overview' ? 'summary' : tab === 'po' ? `po-status/${kind}` : tab
   const effective = tab === 'po' ? { ...params, status: undefined } : params
 
-  const load = useCallback(async () => {
-    setLoading(true); setError('')
-    try {
-      setData(tab === 'po' ? await getPoReport(kind, effective) : await getReport(tab === 'overview' ? 'summary' : tab, effective))
-    } catch (e) { setError(errorMessage(e)); setData(null) } finally { setLoading(false) }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, kind, JSON.stringify(effective)])
-  useEffect(() => { load() }, [load])
+  const { data: fresh, error, reload: load } = useCached(JSON.stringify(['report', endpoint, effective]), () =>
+    (tab === 'po' ? getPoReport(kind, effective) : getReport(endpoint, effective)))
+  // While new filters load, keep showing this tab's previous result (dimmed). Never another tab's: the shapes differ.
+  const last = useRef({})
+  if (fresh) last.current = { tab, data: fresh }
+  const data = fresh || (last.current.tab === tab ? last.current.data : undefined)
 
   const set = (k) => (v) => setFilters((f) => ({ ...f, [k]: v }))
   const exportCsv = async () => {
@@ -92,9 +88,8 @@ export default function Reports() {
   }
 
   const body = () => {
-    if (loading && !data) return <Loading />
     if (error) return <ErrorBanner message={error} onRetry={load} />
-    if (!data) return null
+    if (!data) return <Loading />
     if (tab === 'overview') {
       const s = data.by_status
       return (
@@ -190,7 +185,7 @@ export default function Reports() {
         </div>
       </div>
       <div className="tabs">{TABS.map(([k, l]) => <button key={k} className={`tab ${tab === k ? 'active' : ''}`} onClick={() => setTab(k)}>{l}</button>)}</div>
-      <div style={{ opacity: loading ? 0.6 : 1 }}>{body()}</div>
+      <div style={{ opacity: !fresh && !error ? 0.6 : 1 }}>{body()}</div>
     </>
   )
 }
